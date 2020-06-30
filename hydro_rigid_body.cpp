@@ -154,6 +154,7 @@ void HydroRigidBody::_direct_state_changed(Object *p_state) {
 	}
 
 	float fluid_density = m_water_area->get_density();
+	float fluid_viscosity = m_water_area->get_viscosity();
 	float gravity = -state->get_total_gravity().length();
 
 	//Calculate buoyancy, drag, and lift per-face
@@ -176,16 +177,31 @@ void HydroRigidBody::_direct_state_changed(Object *p_state) {
 		//Drag and lift forces
 		Vector3 vel = base_velocity + get_angular_velocity().cross(center_tri - origin);
 		Vector3 vel_dir = vel.normalized();
+
+		if (vel.length() > 10) {
+			// Limit velocity to prevent instability
+			// (things, especially when multiple colliding objects are present and viscosity is high,
+			// can be thrown to the sky without this)
+			// TODO: Should be done prettier, this is quite a hack
+			vel = vel_dir * 10;
+		}
+
 		float drag_coef = vel_dir.dot(normal);
 		if (drag_coef > 0) {
+			// Drag:
 			float area = f.get_area();
-			float mag = area * m_density * vel.length_squared();
+			// Original code: Why multiplying with density?
+			// float mag = area * m_density * vel.length_squared();
+			// Experimental viscosity:
+			float mag = area * fluid_viscosity * vel.length_squared();
 			Vector3 drag_lift = -vel_dir * drag_coef * mag;
 
+			// Lift:
 			float c = vel_dir.cross(normal).length();
 			float lift_coef = fmin(c, drag_coef) / fmax(c, drag_coef);
 			Vector3 lift_dir = vel_dir.cross(normal).cross(vel_dir).normalized();
 			drag_lift += -lift_dir * lift_coef * mag;
+
 			state->add_force(drag_lift, center_tri - origin);
 			if (m_debug_mesh)
 				draw_debug_vector(drag_lift, center_tri, local_transform);
